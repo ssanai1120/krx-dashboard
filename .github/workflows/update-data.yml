@@ -1,0 +1,40 @@
+name: Update KRX Data
+
+# 매일 평일 한국시간(KST) 18:00 = UTC 09:00 에 자동 실행
+# (GitHub Actions의 스케줄은 UTC 기준입니다)
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'
+  workflow_dispatch: {}   # Actions 탭에서 수동으로도 실행 가능
+
+permissions:
+  contents: write   # krx_data.js를 저장소에 자동 커밋하기 위한 권한
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: pykrx 설치
+        run: pip install pykrx
+
+      - name: KRX 데이터 수집 (krx_data.js 생성)
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+        run: python fetch_krx_data.py
+
+      - name: krx_data.js 변경사항 커밋 & 푸시
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add krx_data.js
+          git diff --staged --quiet || git commit -m "Update KRX data $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
