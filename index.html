@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --bg: #EEF1F5;
@@ -27,16 +29,16 @@
     --mono: 'JetBrains Mono', monospace;
   }
   *{box-sizing:border-box;}
-  html, body{ height: 100%; }
+  html{ height: 100%; }
   body{
     margin:0;
+    min-height: 100%;
     font-family: var(--sans);
     background: var(--bg);
     color: var(--text);
     padding: 16px 28px;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
   h1{
     font-size: 26px;
@@ -167,7 +169,7 @@
     border-radius: 8px 8px 0 0;
     overflow: auto;
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 360px;
     position: relative;
   }
   table{
@@ -1257,57 +1259,108 @@ document.getElementById('searchBtn').addEventListener('click', () => {
 });
 
 /* ============================================================
-   입력값 저장 (PER D-1, 목표주가) - 브라우저에 저장되어 새로고침 후에도 유지됨
-   (이 페이지를 직접 열거나 GitHub Pages 등에서 볼 때 정상 동작합니다.
-    Claude 대화창 안의 미리보기에서는 저장이 안 될 수 있습니다.)
+   입력값 저장 (PER, 목표주가, 메모)
+   1) 브라우저 localStorage: 즉시 캐시 (오프라인이어도 바로 표시)
+   2) Firebase Firestore: 기기 간 동기화 (어느 기기에서 입력하든
+      새로고침하면 같은 내용이 보입니다)
    ============================================================ */
 const STORAGE_KEY = 'krx-dashboard-per-target-inputs-v1';
 let savedInputsMap = {};
 let saveTimer = null;
 
+const firebaseConfig = {
+  apiKey: "AIzaSyD0RohRDFrx3w8m2uCMtbFcWQH15SEsiqw",
+  authDomain: "krx-dashboard-f01ae.firebaseapp.com",
+  projectId: "krx-dashboard-f01ae",
+  storageBucket: "krx-dashboard-f01ae.firebasestorage.app",
+  messagingSenderId: "868531360739",
+  appId: "1:868531360739:web:018b77292358ffcf86c6d6",
+  measurementId: "G-HFL6FRC0LD"
+};
+
+let firestoreDb = null;
+try{
+  if(typeof firebase !== 'undefined'){
+    firebase.initializeApp(firebaseConfig);
+    firestoreDb = firebase.firestore();
+  }
+}catch(e){
+  console.log('Firebase 초기화 실패 (기기 간 동기화 없이 로컬 저장만 사용합니다):', e);
+}
+
+function applySavedInputsToStocks(){
+  const byCode = {};
+  STOCKS.forEach(s => { byCode[s.code] = s; });
+  Object.keys(savedInputsMap).forEach(code => {
+    const stock = byCode[code];
+    if(!stock) return;
+    const v = savedInputsMap[code];
+    if(v.perRatio !== undefined && v.perRatio !== null){
+      stock.perRatio = v.perRatio;
+    } else if(v.perD1 !== undefined && v.perD1 !== null){
+      // 이전 버전(절대 PER값 저장 방식)과의 호환: 현재 D-1 가격 기준으로 비율로 변환
+      const p1 = priceD1(stock);
+      if(p1 && p1 > 0){
+        stock.perRatio = v.perD1 / p1;
+        v.perRatio = stock.perRatio;
+        delete v.perD1;
+      }
+    }
+    if(v.target !== undefined) stock.target = v.target;
+    if(v.memo !== undefined) stock.memo = v.memo;
+    stock.gap = computeGap(stock);
+  });
+}
+
+function persistLocal(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(savedInputsMap));
+  }catch(e){
+    console.log('로컬 저장에 실패했습니다 (브라우저 저장 기능이 막혀있을 수 있습니다):', e);
+  }
+}
+
+function persistRemote(){
+  if(!firestoreDb) return;
+  firestoreDb.collection('shared').doc('inputs').set({
+    data: savedInputsMap,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(e => {
+    console.log('Firebase 동기화 저장에 실패했습니다 (로컬에는 저장됨):', e);
+  });
+}
+
 function schedulePersist(){
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(savedInputsMap));
-    }catch(e){
-      console.log('입력값 저장에 실패했습니다 (브라우저 저장 기능이 막혀있을 수 있습니다):', e);
-    }
+    persistLocal();
+    persistRemote();
   }, 400);
 }
 
 function loadSavedInputs(){
+  // 1) 로컬 캐시를 먼저 적용해 즉시 표시
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      savedInputsMap = JSON.parse(raw);
-      const byCode = {};
-      STOCKS.forEach(s => { byCode[s.code] = s; });
-      Object.keys(savedInputsMap).forEach(code => {
-        const stock = byCode[code];
-        if(!stock) return;
-        const v = savedInputsMap[code];
-        if(v.perRatio !== undefined && v.perRatio !== null){
-          stock.perRatio = v.perRatio;
-        } else if(v.perD1 !== undefined && v.perD1 !== null){
-          // 이전 버전(절대 PER값 저장 방식)과의 호환: 현재 D-1 가격 기준으로 비율로 변환
-          const p1 = priceD1(stock);
-          if(p1 && p1 > 0){
-            stock.perRatio = v.perD1 / p1;
-            v.perRatio = stock.perRatio;
-            delete v.perD1;
-          }
-        }
-        if(v.target !== undefined) stock.target = v.target;
-        if(v.memo !== undefined) stock.memo = v.memo;
-        stock.gap = computeGap(stock);
-      });
-      schedulePersist(); // 마이그레이션된 형식으로 다시 저장
-      if(dataLoaded) renderBody();
-    }
+    if(raw) savedInputsMap = JSON.parse(raw);
   }catch(e){
     console.log('저장된 입력값을 불러올 수 없습니다 (브라우저 저장 기능이 막혀있을 수 있습니다):', e);
   }
+  applySavedInputsToStocks();
+  if(dataLoaded) renderBody();
+
+  // 2) Firebase에서 최신 데이터를 가져와 다른 기기의 입력 내용까지 동기화
+  if(!firestoreDb) return;
+  firestoreDb.collection('shared').doc('inputs').get().then(doc => {
+    if(doc.exists && doc.data() && doc.data().data){
+      savedInputsMap = doc.data().data;
+      applySavedInputsToStocks();
+      persistLocal();
+      if(dataLoaded) renderBody();
+    }
+  }).catch(e => {
+    console.log('Firebase에서 데이터를 불러오지 못했습니다 (로컬 저장값을 사용합니다):', e);
+  });
 }
 
 /* ============================================================
