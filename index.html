@@ -170,6 +170,7 @@
     overflow: auto;
     flex: 1 1 auto;
     min-height: 360px;
+    max-height: 70vh;
     position: relative;
   }
   table{
@@ -261,15 +262,26 @@
   }
   tbody td.text-cell{ font-family: var(--sans); text-align: left; }
   tbody td.name-cell{
+    width: 140px;
+    max-width: 140px;
+    padding: 0;
+  }
+  .name-cell-inner{
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 6px;
+    width: 100%;
+    height: 100%;
+    padding: 0 10px;
+    box-sizing: border-box;
   }
-  tbody td.name-cell .name-text{
+  .name-cell-inner .name-text{
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1;
+    min-width: 0;
   }
   .memo-icon{
     flex: none;
@@ -323,19 +335,23 @@
   .sticky-1{ left:40px; }
   .sticky-2{ left:86px; }
   .sticky-3{ left:164px; }
-  thead .sticky-0, thead .sticky-1, thead .sticky-2, thead .sticky-3{ z-index:4; }
-  tbody .sticky-0, tbody .sticky-1, tbody .sticky-2, tbody .sticky-3{
+  .sticky-4{ left:304px; }
+  /* pd0(등락률 D-day): 항상 고정은 아니지만, 스크롤로 sticky-4 바로 옆에
+     도달하면 자연스럽게 고정 컬럼에 합류하고, 되돌아가면 원래 자리로 풀림 */
+  .sticky-cond-pd0{ left:392px; position: sticky; }
+  thead .sticky-0, thead .sticky-1, thead .sticky-2, thead .sticky-3, thead .sticky-4, thead .sticky-cond-pd0{ z-index:4; }
+  tbody .sticky-0, tbody .sticky-1, tbody .sticky-2, tbody .sticky-3, tbody .sticky-4, tbody .sticky-cond-pd0{
     position: sticky;
     z-index: 1;
     background: #fff;
   }
-  tbody tr.row-alt .sticky-0, tbody tr.row-alt .sticky-1, tbody tr.row-alt .sticky-2, tbody tr.row-alt .sticky-3{
+  tbody tr.row-alt .sticky-0, tbody tr.row-alt .sticky-1, tbody tr.row-alt .sticky-2, tbody tr.row-alt .sticky-3, tbody tr.row-alt .sticky-4, tbody tr.row-alt .sticky-cond-pd0{
     background: var(--row-alt);
   }
-  tbody tr:hover .sticky-0, tbody tr:hover .sticky-1, tbody tr:hover .sticky-2, tbody tr:hover .sticky-3{
+  tbody tr:hover .sticky-0, tbody tr:hover .sticky-1, tbody tr:hover .sticky-2, tbody tr:hover .sticky-3, tbody tr:hover .sticky-4, tbody tr:hover .sticky-cond-pd0{
     background: var(--row-hover);
   }
-  tbody tr.selected .sticky-0, tbody tr.selected .sticky-1, tbody tr.selected .sticky-2, tbody tr.selected .sticky-3{
+  tbody tr.selected .sticky-0, tbody tr.selected .sticky-1, tbody tr.selected .sticky-2, tbody tr.selected .sticky-3, tbody tr.selected .sticky-4, tbody tr.selected .sticky-cond-pd0{
     background: #FFF9E0;
   }
 
@@ -532,8 +548,8 @@
    컬럼 / 그룹 정의
    ============================================================ */
 const GROUPS = [
-  { id:'base',    label:'',                       collapsible:false, cols:['sel','rank','code','name','mcap','tradeAmt'] },
-  { id:'price',   label:'주가(원)/등락률',          collapsible:true,  cols:['price','pd0','pd1','pd2','ptrend'] },
+  { id:'base',    label:'',                       collapsible:false, cols:['sel','rank','code','name','price','mcap','tradeAmt'] },
+  { id:'price',   label:'주가(원)/등락률',          collapsible:true,  cols:['pd0','pd1','pd2','ptrend'] },
   { id:'foreign', label:'외국인 순매수(백만원)',     collapsible:true,  cols:['fd0','fd1','fd2','f20','ftrend'] },
   { id:'inst',    label:'기관 순매수(백만원)',       collapsible:true,  cols:['id0','id1','id2','i20','itrend'] },
   { id:'final',   label:'종목 분석',                collapsible:true,  cols:['perD1','perD0','target','gap','link'] },
@@ -543,7 +559,7 @@ const COL_DEFS = {
   sel:      { label:'선택',     width:40,  sortable:false },
   rank:     { label:'순위',     width:46,  sortable:true },
   code:     { label:'종목코드', width:78,  sortable:true },
-  name:     { label:'종목명',   width:100, sortable:true },
+  name:     { label:'종목명',   width:140, sortable:true },
   mcap:     { label:'시가총액', sub:'D-day', width:92, sortable:true },
   tradeAmt: { label:'거래액',   sub:'D-day', width:92, sortable:true },
 
@@ -867,7 +883,7 @@ function renderHeader(){
   subRow.innerHTML = '';
 
   let stickyIdx = 0;
-  const stickyCols = ['sel','rank','code','name'];
+  const stickyCols = ['sel','rank','code','name','price'];
 
   GROUPS.forEach(group => {
     const collapsed = collapsedGroups.has(group.id);
@@ -906,6 +922,9 @@ function renderHeader(){
         if(stickyCols.includes(colId)){
           sth.classList.add(`sticky-${stickyIdx}`);
           stickyIdx++;
+        }
+        if(colId === 'pd0'){
+          sth.classList.add('sticky-cond-pd0');
         }
 
         if(colId === 'sel'){
@@ -1011,7 +1030,7 @@ function renderBody(){
     return;
   }
 
-  const stickyCols = ['sel','rank','code','name'];
+  const stickyCols = ['sel','rank','code','name','price'];
   const skipped = [];
 
   stocks.forEach((stock, i) => {
@@ -1034,6 +1053,9 @@ function renderBody(){
           if(stickyCols.includes(colId)){
             td.classList.add(`sticky-${stickyIdx}`);
             stickyIdx++;
+          }
+          if(colId === 'pd0'){
+            td.classList.add('sticky-cond-pd0');
           }
           fillCell(td, colId, stock);
           tr.appendChild(td);
@@ -1100,10 +1122,14 @@ function fillCell(td, colId, stock){
     case 'code': td.classList.add('text-cell'); td.textContent = stock.code; break;
     case 'name': {
       td.classList.add('text-cell', 'name-cell');
+      const inner = document.createElement('div');
+      inner.className = 'name-cell-inner';
+
       const nameSpan = document.createElement('span');
       nameSpan.className = 'name-text';
       nameSpan.textContent = stock.name;
-      td.appendChild(nameSpan);
+      nameSpan.title = stock.name;
+      inner.appendChild(nameSpan);
 
       const memoBtn = document.createElement('button');
       memoBtn.className = 'memo-icon' + (stock.memo && stock.memo.trim() ? ' has-memo' : '');
@@ -1114,7 +1140,8 @@ function fillCell(td, colId, stock){
         e.stopPropagation();
         openMemoModal(stock);
       });
-      td.appendChild(memoBtn);
+      inner.appendChild(memoBtn);
+      td.appendChild(inner);
       break;
     }
     case 'mcap': td.textContent = fmtInt(stock.mcap); break;
