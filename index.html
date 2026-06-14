@@ -1134,10 +1134,12 @@ function fillCell(td, colId, stock){
       inner.appendChild(nameSpan);
 
       const memoBtn = document.createElement('button');
-      memoBtn.className = 'memo-icon' + (stock.memo && stock.memo.trim() ? ' has-memo' : '');
+      const hasMemo = !!(stock.memo && stock.memo.trim());
+      const hasDefault = !!getDefaultMemo(stock.code);
+      memoBtn.className = 'memo-icon' + (hasMemo || hasDefault ? ' has-memo' : '');
       memoBtn.id = `memo-btn-${stock.code}`;
       memoBtn.textContent = '✎';
-      memoBtn.title = (stock.memo && stock.memo.trim()) ? '메모 보기/수정' : '메모 추가';
+      memoBtn.title = hasMemo ? '메모 보기/수정' : (hasDefault ? '종목 설명 보기/수정' : '메모 추가');
       memoBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         openMemoModal(stock);
@@ -1399,11 +1401,61 @@ let currentMemoStock = null;
 const memoModal = document.getElementById('memoModal');
 const memoTextarea = document.getElementById('memoTextarea');
 
+/* ============================================================
+   종목별 기본 메모 (사용자가 직접 저장한 메모가 없을 때만 표시)
+   ============================================================ */
+const DEFAULT_MEMOS = {
+  // 웨이퍼 제조
+  '099360': '[소재] 솔브레인 : 웨이퍼 표면을 갈아내는 연마액과 식각액 공급. 전공정 전반 소재 납품',
+  '166090': '[부품] 하나머티리얼즈 : 장비 내부에서 소모되는 실리콘 부품 제조. 꾸준한 교체 수요 발생',
+  '098160': '[부품] 월덱스 : 장비 내부 석영(쿼츠) 소모 부품 전문. 반도체 투자 사이클과 무관한 안정적 수요 구조',
+  // 산화·증착·금속배선
+  '240810': '[장비] 원익IPS : 증착·식각 장비 국내 1위. 삼성전자·SK하이닉스 주요 공급사',
+  '036930': '[장비] 주성엔지니어링 ⭐ : ALD(원자 한 층씩 정밀하게 쌓는 방식) 장비 원천기술 보유. 반도체 미세화·GAA 전환 시 수혜 급증',
+  '084370': '[장비] 유진테크 : 저압 환경 박막 증착(LPCVD) 장비 전문. 낸드 3D 적층 투자 확대 수혜',
+  '281820': '[장비] 케이씨텍 : 웨이퍼 표면을 평탄하게 갈아내는 CMP 장비와 연마액(슬러리) 동시 보유',
+  '286940': '[소재] 레이크머티리얼즈 : 증착 공정에 쓰이는 고순도 원료(전구체) 전문. 미세화 진행에 따른 수요 증가',
+  // 포토공정
+  '005290': '[소재] 동진쎄미켐 : 빛에 반응해 회로 패턴을 남기는 감광액(포토레지스트) 국내 1위. EUV용 제품 개발 중',
+  '036810': '[부품] 에프에스티 ⭐ : EUV 마스크를 먼지로부터 보호하는 얇은 막(펠리클) 국내 유일 양산사. 전 세계 극소수만 공급 가능한 대체 불가 독점 구조',
+  '101490': '[소재] 에스앤에스텍 : 회로 패턴을 새기는 원판(블랭크마스크) 국내 독점 공급',
+  // 식각공정
+  '319660': '[장비] 피에스케이 : 공정 후 남은 감광액 찌꺼기를 제거하는 장비(애셔) 전문. 낸드 고단화 수혜',
+  '064760': '[부품] 티씨케이 ⭐ : 식각 챔버 내부에 쓰이는 SiC(탄화규소) 소모 부품 국내 독점. 장비 가동 한 수요 꾸준히 발생',
+  // EDS 공정
+  '089030': '[장비] 테크윙 : 웨이퍼 테스트 핸들러(칩을 검사 장비에 올려주는 로봇) 국내 1위. 메모리 출하량과 직결',
+  '232140': '[장비] 와이씨 : 테스트 환경을 고온·저온으로 정밀 제어하는 장비 전문',
+  '039310': '[장비] 디아이 : 가혹한 환경을 가해 칩 수명을 사전 검증하는 번인(Burn-in) 장비 전문',
+  '137400': '[부품] 마이크로컨텍솔 : 테스트 시 칩과 검사 장비를 연결하는 소모성 접촉 부품(컨택터) 전문',
+  // TSV·범핑
+  '042700': '[장비] 한미반도체 ⭐ : 열과 압력으로 칩을 정밀하게 붙이는 TC본더 세계 1위. AI→HBM→TC본더 직결 수혜 구조. 엔비디아 HBM 공급망 편입',
+  '039030': '[장비] 이오테크닉스 : 레이저로 웨이퍼를 자르고 구멍 뚫는 장비. 다이싱·TSV 드릴링 공정 모두 대응',
+  '039440': '[장비] 에스티아이 : 공정 중 오염을 제거하는 웨이퍼 세정 장비 전문. TSV 형성 후 세정 수요 수혜',
+  '319400': '[장비] 피에스케이홀딩스 : 범핑 공정 후 남은 감광액 찌꺼기 제거 장비 지주사',
+  // 백그라인딩·다이싱
+  '079370': '[장비] 제우스 : 백그라인딩·세정 장비 전문. HBM 박형화 수요 수혜',
+  // 패키징
+  '079860': '[장비] 한화정밀기계 : 칩을 기판에 붙이고 금속선으로 연결하는 장비 국내 1위',
+  '056190': '[장비] 에스에프에이 : 패키징 공장 내 물류·이송 자동화 장비 공급',
+  '033640': '[OSAT] 네패스 : 칩을 패키지로 조립하는 위탁 서비스(OSAT) 전문사. 모바일 칩 고객 다수',
+  '403870': '[장비] HPSP ⭐ : 고압 수소 환경에서 칩 내부 결함을 치유하는 어닐링 장비 세계 유일 양산사. GAA 전환 시 수요 급증 예상',
+  // 최종 테스트
+  '131970': '[서비스] 두산테스나 : 시스템 반도체(CPU·GPU 등) 테스트 전문 위탁사. 퀄컴·엔비디아의 국내 테스트 파트너',
+  '058470': '[부품] 리노공업 ⭐ : 반도체 검사 시 칩과 검사 장비를 연결하는 소켓(IC 테스트 소켓) 세계 최고 수준. 전 공정 자체 내재화로 영업이익률 30~47% 유지. 독점 기술 + 소모품 + 고마진 3박자',
+  '095340': '[부품] ISC : 실리콘 소재 테스트 소켓 전문. 고주파·고속 환경 테스트에 강점',
+  '287410': '[서비스] 네패스아크 : 네패스 계열 시스템 반도체 최종 테스트 자회사',
+};
+
+function getDefaultMemo(code){
+  return DEFAULT_MEMOS[code] || '';
+}
+
 function openMemoModal(stock){
   currentMemoStock = stock;
   document.getElementById('memoModalTitle').textContent = `${stock.name} 메모`;
   document.getElementById('memoModalSub').textContent = stock.code;
-  memoTextarea.value = stock.memo || '';
+  // 저장된 메모가 있으면 그걸 표시, 없으면 기본 설명을 표시
+  memoTextarea.value = stock.memo || getDefaultMemo(stock.code);
   memoModal.classList.remove('hidden');
   memoTextarea.focus();
 }
