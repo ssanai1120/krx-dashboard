@@ -1,11 +1,14 @@
 name: Update KRX Data
 
-# 매일 평일 한국시간(KST) 18:00 = UTC 09:00 에 자동 실행
-# (GitHub Actions의 스케줄은 UTC 기준입니다)
+# 매일 평일 두 번 자동 실행 (GitHub Actions 스케줄은 UTC 기준)
+# - UTC 06:45 = KST 15:45 : 정규장 마감 직후 주가 잠정치 수집
+# - UTC 09:30 = KST 18:30 : 시간외 거래 마감 후 최종 확정치 수집
+# ※ GitHub Actions cron은 서버 부하에 따라 수 분~수십 분 지연될 수 있습니다.
 on:
   schedule:
-    - cron: '0 9 * * 1-5'
-  workflow_dispatch: {}   # Actions 탭에서 수동으로도 실행 가능
+    - cron: '45 6 * * 1-5'   # KST 15:45 - 주가 잠정치
+    - cron: '30 9 * * 1-5'   # KST 18:30 - 최종 확정치
+  workflow_dispatch: {}       # Actions 탭에서 수동으로도 실행 가능
 
 permissions:
   contents: write   # krx_data.js를 저장소에 자동 커밋하기 위한 권한
