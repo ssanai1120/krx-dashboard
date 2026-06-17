@@ -87,6 +87,22 @@ def main():
     check_credentials()
 
     base_date = sys.argv[1] if len(sys.argv) > 1 else datetime.today().strftime("%Y%m%d")
+
+    # 오늘 날짜로 시도했을 때 KRX 데이터가 아직 없으면 전날 영업일로 자동 후퇴
+    if len(sys.argv) <= 1:
+        try:
+            test_df = stock.get_market_ohlcv_by_ticker(base_date, market="ALL")
+            if test_df.empty:
+                prev_days = stock.get_previous_business_days(
+                    fromdate=(datetime.today() - timedelta(days=10)).strftime("%Y%m%d"),
+                    todate=base_date
+                )
+                if len(prev_days) >= 2:
+                    base_date = prev_days[-2].strftime("%Y%m%d")
+                    print(f"오늘({datetime.today().strftime('%Y%m%d')}) 데이터 미집계. 기준일을 전날({base_date})로 변경합니다.")
+        except Exception:
+            pass
+
     print(f"기준일(D-day): {base_date}")
 
     dates = get_period_dates(base_date, PERIOD)
@@ -103,12 +119,21 @@ def main():
     for idx, d in enumerate(dates):
         print(f"  [{idx+1}/{n}] {d} 데이터 수집 중...")
 
-        ohlcv = stock.get_market_ohlcv_by_ticker(d, market="ALL")
-        time.sleep(SLEEP_SEC)
-        f_df = stock.get_market_net_purchases_of_equities_by_ticker(d, d, market="ALL", investor="외국인")
-        time.sleep(SLEEP_SEC)
-        i_df = stock.get_market_net_purchases_of_equities_by_ticker(d, d, market="ALL", investor="기관합계")
-        time.sleep(SLEEP_SEC)
+        try:
+            ohlcv = stock.get_market_ohlcv_by_ticker(d, market="ALL")
+            time.sleep(SLEEP_SEC)
+            f_df = stock.get_market_net_purchases_of_equities_by_ticker(d, d, market="ALL", investor="외국인")
+            time.sleep(SLEEP_SEC)
+            i_df = stock.get_market_net_purchases_of_equities_by_ticker(d, d, market="ALL", investor="기관합계")
+            time.sleep(SLEEP_SEC)
+
+            if ohlcv.empty or f_df.empty or i_df.empty:
+                print(f"    → {d} 데이터 미집계 (장 마감 전이거나 KRX 미제공). 건너뜀.")
+                continue
+
+        except Exception as e:
+            print(f"    → {d} 데이터 수집 오류: {e}. 건너뜀.")
+            continue
 
         close_map = ohlcv["종가"].to_dict()
         chg_map = ohlcv["등락률"].to_dict()
