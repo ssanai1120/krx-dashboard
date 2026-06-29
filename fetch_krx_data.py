@@ -163,6 +163,16 @@ def main():
     cap_df = stock.get_market_cap_by_ticker(last_collected_date, market="ALL")
     cap_map = cap_df["시가총액"].to_dict()
 
+    # 실제로 데이터가 수집된 마지막 날의 인덱스를 구해서 배열을 잘라냄
+    # → 오늘 데이터가 없을 경우 d0가 0으로 표시되는 문제 방지
+    if last_collected_date in dates:
+        last_idx = dates.index(last_collected_date)
+    else:
+        last_idx = n - 1
+    actual_n = last_idx + 1
+    actual_dates = dates[:actual_n]
+    print(f"실제 데이터 수집 기간: {actual_dates[0]} ~ {actual_dates[-1]} ({actual_n}영업일)")
+
     # D-day 거래대금 기준 상위 정렬
     tickers = sorted(trade_amt_dday.keys(), key=lambda t: trade_amt_dday.get(t, 0), reverse=True)
 
@@ -170,44 +180,43 @@ def main():
     for ticker in tickers:
         if ticker not in foreign_daily or ticker not in price_daily:
             continue  # 데이터가 누락된 종목(거래정지 등)은 제외
-        f_trend = foreign_daily[ticker]
-        i_trend = inst_daily.get(ticker, [0] * n)
-        chg = chg_daily.get(ticker, [0.0] * n)
+
+        # 실제 수집된 날짜까지만 잘라냄
+        f_trend = foreign_daily[ticker][:actual_n]
+        i_trend = inst_daily.get(ticker, [0] * n)[:actual_n]
+        chg = chg_daily.get(ticker, [0.0] * n)[:actual_n]
+        price_trend = price_daily[ticker][:actual_n]
 
         stocks.append({
             "code": ticker,
             "name": names.get(ticker, stock.get_market_ticker_name(ticker)),
-            "price": price_daily[ticker][-1],
+            "price": price_trend[-1],
             "chg": [
-                round(chg[-1], 2) if n >= 1 else 0,
-                round(chg[-2], 2) if n >= 2 else 0,
-                round(chg[-3], 2) if n >= 3 else 0,
+                round(chg[-1], 2) if actual_n >= 1 else 0,
+                round(chg[-2], 2) if actual_n >= 2 else 0,
+                round(chg[-3], 2) if actual_n >= 3 else 0,
             ],
             "mcap": to_won_million(cap_map.get(ticker, 0)),
             "tradeAmt": to_won_million(trade_amt_dday.get(ticker, 0)),
             "foreign": {
-                "d0": to_won_million(f_trend[-1]) if n >= 1 else 0,
-                "d1": to_won_million(f_trend[-2]) if n >= 2 else 0,
-                "d2": to_won_million(f_trend[-3]) if n >= 3 else 0,
+                "d0": to_won_million(f_trend[-1]) if actual_n >= 1 else 0,
+                "d1": to_won_million(f_trend[-2]) if actual_n >= 2 else 0,
+                "d2": to_won_million(f_trend[-3]) if actual_n >= 3 else 0,
                 "d20": to_won_million(sum(f_trend)),
             },
             "inst": {
-                "d0": to_won_million(i_trend[-1]) if n >= 1 else 0,
-                "d1": to_won_million(i_trend[-2]) if n >= 2 else 0,
-                "d2": to_won_million(i_trend[-3]) if n >= 3 else 0,
+                "d0": to_won_million(i_trend[-1]) if actual_n >= 1 else 0,
+                "d1": to_won_million(i_trend[-2]) if actual_n >= 2 else 0,
+                "d2": to_won_million(i_trend[-3]) if actual_n >= 3 else 0,
                 "d20": to_won_million(sum(i_trend)),
             },
-            "priceTrend": price_daily[ticker],
+            "priceTrend": price_trend,
             "foreignTrend": [to_won_million(v) for v in f_trend],
             "instTrend": [to_won_million(v) for v in i_trend],
         })
 
     for i, s in enumerate(stocks):
         s["rank"] = i + 1
-
-    # A안: 실제 데이터가 있는 마지막 날 기준으로 20영업일 역산
-    actual_dates = get_period_dates(last_collected_date, PERIOD)
-    print(f"실제 조회기간: {actual_dates[0]} ~ {actual_dates[-1]} ({len(actual_dates)}영업일)")
 
     payload = {
         "asOfDate": last_collected_date,
