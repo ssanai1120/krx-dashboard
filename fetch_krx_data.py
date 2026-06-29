@@ -115,6 +115,7 @@ def main():
     names = {}           # ticker -> 종목명
     trade_amt_dday = {}  # ticker -> D-day 거래대금(원)
     n = len(dates)
+    last_collected_date = dates[0]  # 실제로 수집된 마지막 날짜 추적
 
     for idx, d in enumerate(dates):
         print(f"  [{idx+1}/{n}] {d} 데이터 수집 중...")
@@ -143,11 +144,12 @@ def main():
         i_amt_map = i_df["순매수거래대금"].to_dict()
 
         # 종목 전체 집합 갱신 (D-day 기준 거래대금 상위 정렬에 사용)
+        last_collected_date = d  # 성공적으로 수집된 날짜 갱신
         for ticker in close_map:
             price_daily.setdefault(ticker, [0] * n)[idx] = int(close_map.get(ticker, 0))
             chg_daily.setdefault(ticker, [0.0] * n)[idx] = float(chg_map.get(ticker, 0.0))
-            if idx == n - 1:
-                trade_amt_dday[ticker] = int(trade_amt_map.get(ticker, 0))
+            # 수집된 날짜 중 가장 마지막 날짜의 거래대금으로 계속 갱신
+            trade_amt_dday[ticker] = int(trade_amt_map.get(ticker, 0))
 
         for ticker in f_amt_map:
             foreign_daily.setdefault(ticker, [0] * n)[idx] = int(f_amt_map.get(ticker, 0))
@@ -158,7 +160,7 @@ def main():
             inst_daily.setdefault(ticker, [0] * n)[idx] = int(i_amt_map.get(ticker, 0))
 
     print("시가총액 데이터 수집 중...")
-    cap_df = stock.get_market_cap_by_ticker(dates[-1], market="ALL")
+    cap_df = stock.get_market_cap_by_ticker(last_collected_date, market="ALL")
     cap_map = cap_df["시가총액"].to_dict()
 
     # D-day 거래대금 기준 상위 정렬
@@ -204,7 +206,7 @@ def main():
         s["rank"] = i + 1
 
     payload = {
-        "asOfDate": dates[-1],
+        "asOfDate": last_collected_date,
         "periodDates": dates,
         "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "stocks": stocks,
