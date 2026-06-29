@@ -205,9 +205,13 @@ def main():
     for i, s in enumerate(stocks):
         s["rank"] = i + 1
 
+    # A안: 실제 데이터가 있는 마지막 날 기준으로 20영업일 역산
+    actual_dates = get_period_dates(last_collected_date, PERIOD)
+    print(f"실제 조회기간: {actual_dates[0]} ~ {actual_dates[-1]} ({len(actual_dates)}영업일)")
+
     payload = {
         "asOfDate": last_collected_date,
-        "periodDates": dates,
+        "periodDates": actual_dates,
         "generatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "stocks": stocks,
     }
