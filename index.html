@@ -1230,7 +1230,7 @@ function fillCell(td, colId, stock){
     case 'link': {
       td.classList.add('text-cell');
       const a = document.createElement('a');
-      a.href = `https://comp.fnguide.com/SVO2/ASP/SVD_Main.asp?pGB=1&gicode=A${stock.code}&cID=&MenuYn=Y&ReportGB=&NewMenuID=101&stkGb=701`;
+      a.href = `https://wcomp.fnguide.com/?c_id=AA&menu_type=01&cmp_cd=${stock.code}`;
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.className = 'analysis-link';
